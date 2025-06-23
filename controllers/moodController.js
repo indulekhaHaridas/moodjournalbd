@@ -1,4 +1,5 @@
 const moods = require('../model/moodModel');
+const users = require('../model/userModel')
 
 
 //Controller to add a new mood entry
@@ -228,3 +229,44 @@ exports.anomalyCountController = async (req, res) => {
 
 
 
+exports.getAllMoodEntries = async (req, res) => {
+  try {
+    const result = await moods.aggregate([
+      {
+        $group: {
+          _id: "$userMail",        // group by user email
+          moods: { $push: "$$ROOT" }, // push all mood entries into an array
+          count: { $sum: 1 }       // count entries per user
+        }
+      },
+      {
+        $lookup: {
+          from: "users",           // MongoDB auto-converts model name to lowercase plural
+          localField: "_id",       // _id here is userMail
+          foreignField: "email",   // match email field in users
+          as: "userDetails"
+        }
+      },
+      { $unwind: { path: "$userDetails", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          moods: 1,
+          count: 1,
+          userDetails: {
+            _id: "$userDetails._id",
+            username: "$userDetails.username",
+            email: "$userDetails.email",
+            profile: "$userDetails.profile"
+          }
+        }
+      },
+      { $sort: { count: -1 } } // most active users first
+    ]);
+
+    res.status(200).json(result);
+  } catch (err) {
+    console.error("Error fetching moods grouped by user:", err);
+    res.status(500).json({ error: "Failed to fetch user mood entries" });
+  }
+};
